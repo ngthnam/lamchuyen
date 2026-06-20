@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>KAIROS — The Adult Lounge</title>
+<meta name="description" content="A cinematic drinking game for TV + phone. Reflexes, logic and memory, taxed in liquid.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+
+<div class="aurora-layer"></div>
+<div class="aurora-vignette"></div>
+<div class="flash-overlay" id="flash"></div>
+
+<div id="app">
+  <div class="topbar" id="topbar"></div>
+  <div class="stage" id="stage">
+    <div class="scene-sub">Loading…</div>
+  </div>
+  <div class="scene-nav" id="scenenav"></div>
+</div>
+
+<div id="toast-host"></div>
+
+<script src="i18n.js"></script>
+<script src="audio.js"></script>
+<script src="supabase-client.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
