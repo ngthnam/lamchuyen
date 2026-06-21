@@ -34,6 +34,12 @@ put anything sensitive in it.
    puzzles, flip Paradox cards); phones are personal controllers.
 4. **Hangover Report** at the end shows the sip ledger and two awards.
 
+For a full walkthrough of every screen, recommended player counts, pacing
+tips, and — important for whoever's hosting — *when* to fire each plot twist
+for maximum effect, see **[HOST_GUIDE.md](HOST_GUIDE.md)** (in Vietnamese).
+Read it before the session; don't project it on the shared screen, since the
+plot-twist timing section is meant to stay a host secret.
+
 A room never expires automatically — if you want to clean up old sessions,
 run this in the SQL editor occasionally:
 ```sql
