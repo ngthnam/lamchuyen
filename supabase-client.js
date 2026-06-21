@@ -51,9 +51,18 @@ const KairosDB = {
     return data;
   },
 
+  // Returns true/false instead of throwing — a network hiccup (or a
+  // Supabase project that's gone to sleep) must never leave the caller's
+  // local UI state silently un-updated with no feedback.
   async updateRoom(code, patch) {
-    const { error } = await this.client.from('kairos_rooms').update(patch).eq('code', code);
-    if (error) console.error('updateRoom error:', error);
+    try {
+      const { error } = await this.client.from('kairos_rooms').update(patch).eq('code', code);
+      if (error) { console.error('updateRoom error:', error); return false; }
+      return true;
+    } catch (e) {
+      console.error('updateRoom exception:', e);
+      return false;
+    }
   },
 
   subscribeRoom(code, onChange) {
@@ -76,8 +85,14 @@ const KairosDB = {
   },
 
   async updatePlayer(id, patch) {
-    const { error } = await this.client.from('kairos_players').update(patch).eq('id', id);
-    if (error) console.error('updatePlayer error:', error);
+    try {
+      const { error } = await this.client.from('kairos_players').update(patch).eq('id', id);
+      if (error) { console.error('updatePlayer error:', error); return false; }
+      return true;
+    } catch (e) {
+      console.error('updatePlayer exception:', e);
+      return false;
+    }
   },
 
   async listPlayers(code) {

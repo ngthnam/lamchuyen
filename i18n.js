@@ -84,7 +84,7 @@ const KairosI18n = {
     gVltObj: 'Giải câu đố IQ và đặt cược thông minh.', gVltHow: 'Cược 1–3 ngụm (hoặc tất tay), rồi giải dãy số.', gVltPen: 'Thua thì uống đúng số ngụm đã cược.',
     gParObj: 'Vượt qua trí nhớ bị đánh lừa.', gParHow: 'Ghi nhớ vị trí thẻ rồi chọn đúng theo yêu cầu.', gParPen: 'Sai 2 lần liên tiếp: điện thoại "Blackout", uống 1 shot để reset.',
 
-    toastJoined: 'đã vào phòng', toastConnLost: 'Mất kết nối, đang thử lại…', toastConnOk: 'Đã kết nối',
+    toastJoined: 'đã vào phòng', toastConnLost: 'Mất kết nối — thử bấm lại.', toastConnOk: 'Đã kết nối',
     c_cold: 'LẠNH', c_hot: 'NÓNG', c_stop: 'DỪNG', c_go: 'ĐI', c_up: 'LÊN',
 
     navLounge: 'Sảnh Chờ', navDashboard: 'Đấu Trường', navSynapse: 'Synapse', navVault: 'Két Sắt', navParadox: 'Paradox', navReport: 'Tổng Kết',
@@ -173,7 +173,7 @@ const KairosI18n = {
     gVltObj: 'Solve the IQ puzzle and bet smart.', gVltHow: 'Wager 1–3 sips (or all-in), then solve the sequence.', gVltPen: 'Lose and drink exactly what you wagered.',
     gParObj: 'Beat your own tricked memory.', gParHow: 'Memorise card positions, then pick the one asked for.', gParPen: 'Two wrong in a row: phone goes Blackout, 1 shot to reset.',
 
-    toastJoined: 'joined the room', toastConnLost: 'Connection lost, retrying…', toastConnOk: 'Connected',
+    toastJoined: 'joined the room', toastConnLost: 'Connection lost — try that again.', toastConnOk: 'Connected',
     c_cold: 'COLD', c_hot: 'HOT', c_stop: 'STOP', c_go: 'GO', c_up: 'UP',
 
     navLounge: 'The Lounge', navDashboard: 'The Arena', navSynapse: 'Synapse', navVault: 'The Vault', navParadox: 'Paradox', navReport: 'Hangover',

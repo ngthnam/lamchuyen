@@ -186,9 +186,15 @@ const Kairos = {
 
   // ---------- room lifecycle ----------
   async enterRoom() {
-    if (!S.room) S.room = await KairosDB.getRoom(S.roomCode);
-    S._lastTwistTs = (S.room.state.twist || {}).ts || null;
-    S.players = await KairosDB.listPlayers(S.roomCode);
+    try {
+      if (!S.room) S.room = await KairosDB.getRoom(S.roomCode);
+      S._lastTwistTs = (S.room.state.twist || {}).ts || null;
+      S.players = await KairosDB.listPlayers(S.roomCode);
+    } catch (e) {
+      console.error('enterRoom failed:', e);
+      alert('Không kết nối được tới máy chủ. Kiểm tra mạng rồi tải lại trang.');
+      return;
+    }
     KairosDB.subscribeRoom(S.roomCode, room => { S.room = room; this._onRoomChange(); this.render(); });
     KairosDB.subscribePlayers(S.roomCode, (eventType, row) => this._onPlayerChange(eventType, row));
     if (!this._ticker) this._ticker = setInterval(() => this._tick(), 80);
@@ -309,8 +315,21 @@ const Kairos = {
   },
 
   // ---------- room write helpers ----------
-  async _patchRoom(patch) { await KairosDB.updateRoom(S.roomCode, patch); S.room = Object.assign({}, S.room, patch); this.render(); },
-  async _patchMe(patch) { await KairosDB.updatePlayer(S.me.id, patch); S.me = Object.assign({}, S.me, patch); this.render(); },
+  // If the write fails (network hiccup, Supabase project asleep), the local
+  // state must NOT silently stay stale — surface it so a click never looks
+  // like it just did nothing.
+  async _patchRoom(patch) {
+    const ok = await KairosDB.updateRoom(S.roomCode, patch);
+    if (!ok) { this.toast('⚠️ ' + t('toastConnLost')); return; }
+    S.room = Object.assign({}, S.room, patch);
+    this.render();
+  },
+  async _patchMe(patch) {
+    const ok = await KairosDB.updatePlayer(S.me.id, patch);
+    if (!ok) { this.toast('⚠️ ' + t('toastConnLost')); return; }
+    S.me = Object.assign({}, S.me, patch);
+    this.render();
+  },
 
   // Routes a sip penalty through The Mole's one-time shield: if it's
   // active, the sips don't land on the mole at all — instead a redirect
