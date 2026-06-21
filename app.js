@@ -6,6 +6,12 @@
    write to every connected device — that's the whole multiplayer model.
 ──────────────────────────────── */
 
+// Synapse penalty: the slowest valid tapper each round drinks this many
+// sips; jumping the gun (tapping before "go") always drinks exactly half
+// of that — defined off the same constant so the two stay linked.
+const SYN_SLOWEST_PENALTY = 1;
+const SYN_FOUL_PENALTY = SYN_SLOWEST_PENALTY / 2;
+
 const VAULT_PUZZLES = [
   { seq: [2, 6, 12, 20, 30], answer: 42 },
   { seq: [1, 1, 2, 3, 5, 8], answer: 13 },
@@ -404,7 +410,7 @@ const Kairos = {
     const valid = entries.filter(p => p.last_reaction_ms >= 0);
     if (valid.length) {
       const slowest = valid.reduce((a, b) => (a.last_reaction_ms > b.last_reaction_ms ? a : b));
-      KairosDB.updatePlayer(slowest.id, { sips: Number(slowest.sips || 0) + 1, penalty_count: (slowest.penalty_count || 0) + 1 });
+      KairosDB.updatePlayer(slowest.id, { sips: Number(slowest.sips || 0) + SYN_SLOWEST_PENALTY, penalty_count: (slowest.penalty_count || 0) + 1 });
     } else {
       this.toast(t('needPlayers'));
     }
@@ -430,7 +436,7 @@ const Kairos = {
       <div class="reaction-feed">
         <div class="scene-label">${t('synFeedTitle')}</div>
         ${entries.map(p => p.last_reaction_ms === -1
-          ? `<div class="reaction-row foul"><span>${escapeHtml(p.name)}</span><b>${t('synHostFoul')}</b></div>`
+          ? `<div class="reaction-row foul"><span>${escapeHtml(p.name)}</span><b>${t('synHostFoul')} · -${SYN_FOUL_PENALTY} 🥃</b></div>`
           : `<div class="reaction-row"><span>${escapeHtml(p.name)}</span><b>${p.last_reaction_ms} ms</b></div>`).join('')}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
@@ -447,7 +453,7 @@ const Kairos = {
     if (syn.phase !== 'armed') return;
     if (!S._synGoFired) {
       vibrate(80);
-      this._patchMe({ last_reaction_ms: -1, last_round: round, sips: Number(S.me.sips || 0) + 1, penalty_count: (S.me.penalty_count || 0) + 1 });
+      this._patchMe({ last_reaction_ms: -1, last_round: round, sips: Number(S.me.sips || 0) + SYN_FOUL_PENALTY, penalty_count: (S.me.penalty_count || 0) + 1 });
       return;
     }
     const ms = Math.max(1, Math.round(Date.now() - syn.goAt));
