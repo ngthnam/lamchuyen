@@ -18,6 +18,11 @@ const SYN_ARM_MIN_MS = 100;
 const SYN_ARM_MAX_MS = 10000;
 const SYN_TAP_WINDOW_MS = 10000;
 
+// Plot twists — host-triggered chaos. Group Tax hits everyone's sips
+// directly; Polarity Reversal and The Mole are read by the Synapse/penalty
+// logic further down.
+const TWIST_TAX_AMOUNT = 0.5;
+
 const VAULT_PUZZLES = [
   { seq: [2, 6, 12, 20, 30], answer: 42 },
   { seq: [1, 1, 2, 3, 5, 8], answer: 13 },
@@ -26,6 +31,8 @@ const VAULT_PUZZLES = [
   { seq: [1, 4, 9, 16, 25], answer: 36 },
   { seq: [2, 3, 5, 8, 13], answer: 21 },
 ];
+
+const PARADOX_BLACKOUT_PENALTY = 1;
 
 const PARADOX_CARDS = [
   { key: 'c_cold', bg: '#d93636' },
@@ -180,6 +187,7 @@ const Kairos = {
   // ---------- room lifecycle ----------
   async enterRoom() {
     if (!S.room) S.room = await KairosDB.getRoom(S.roomCode);
+    S._lastTwistTs = (S.room.state.twist || {}).ts || null;
     S.players = await KairosDB.listPlayers(S.roomCode);
     KairosDB.subscribeRoom(S.roomCode, room => { S.room = room; this._onRoomChange(); this.render(); });
     KairosDB.subscribePlayers(S.roomCode, (eventType, row) => this._onPlayerChange(eventType, row));
@@ -204,7 +212,11 @@ const Kairos = {
       const prev = idx >= 0 ? S.players[idx] : null;
       if (idx >= 0) S.players[idx] = row; else S.players.push(row);
       if (S.role === 'host') this._hostReactToPlayerEvent(prev, row);
-      if (S.role === 'player' && S.me && S.me.id === row.id) S.me = row;
+      if (S.role === 'player' && S.me && S.me.id === row.id) {
+        const becameMole = row.is_mole && !S.me.is_mole;
+        S.me = row;
+        if (becameMole) this._showMoleReveal();
+      }
     }
     this.render();
   },
@@ -220,6 +232,13 @@ const Kairos = {
 
   _onRoomChange() {
     if (S.room && S.room.screen === 'synapse' && (S.room.state.syn || {}).phase !== 'armed') S._synGoFired = false;
+    const twist = S.room && S.room.state.twist;
+    if (twist && twist.ts !== S._lastTwistTs) {
+      S._lastTwistTs = twist.ts;
+      this._fireFlash();
+      KairosAudio.braam();
+      this.toast(t('twist' + twist.type[0].toUpperCase() + twist.type.slice(1)));
+    }
   },
 
   _fireFlash() {
@@ -231,6 +250,35 @@ const Kairos = {
     const host = document.getElementById('toast-host');
     const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg;
     host.appendChild(d); setTimeout(() => d.remove(), 3200);
+  },
+
+  // Broadcasts a room-wide plot-twist banner to every connected device.
+  _fireTwist(type) {
+    this._patchRoom({ state: Object.assign({}, S.room.state, { twist: { type, ts: Date.now() } }) });
+  },
+  _showMoleReveal() {
+    KairosAudio.chime();
+    vibrate([50, 50, 50, 50, 50]);
+    this.toast(t('moleRevealToast'));
+  },
+
+  // ---------- host-triggered plot twists ----------
+  triggerTax() {
+    if (!S.players.length) { this.toast(t('needPlayers')); return; }
+    S.players.forEach(p => {
+      KairosDB.updatePlayer(p.id, { sips: Number(p.sips || 0) + TWIST_TAX_AMOUNT });
+      p.sips = Number(p.sips || 0) + TWIST_TAX_AMOUNT;
+    });
+    this._fireTwist('tax');
+  },
+  async triggerMole() {
+    if (!S.players.length) { this.toast(t('needPlayers')); return; }
+    for (const p of S.players) {
+      if (p.is_mole || p.mole_shield) await KairosDB.updatePlayer(p.id, { is_mole: false, mole_shield: false });
+    }
+    const target = S.players[Math.floor(Math.random() * S.players.length)];
+    await KairosDB.updatePlayer(target.id, { is_mole: true, mole_shield: true });
+    this._fireTwist('mole');
   },
 
   // 80ms ticker: drives the Synapse "armed -> go" flip from a shared timestamp.
@@ -256,12 +304,44 @@ const Kairos = {
   },
   _synTimeout(round) {
     vibrate([100, 60, 100]);
-    this._patchMe({ last_reaction_ms: -2, last_round: round, sips: Number(S.me.sips || 0) + SYN_SLOWEST_PENALTY, penalty_count: (S.me.penalty_count || 0) + 1 });
+    this._patchMe({ last_reaction_ms: -2, last_round: round, penalty_count: (S.me.penalty_count || 0) + 1 });
+    this._applySelfPenalty(SYN_SLOWEST_PENALTY);
   },
 
   // ---------- room write helpers ----------
   async _patchRoom(patch) { await KairosDB.updateRoom(S.roomCode, patch); S.room = Object.assign({}, S.room, patch); this.render(); },
   async _patchMe(patch) { await KairosDB.updatePlayer(S.me.id, patch); S.me = Object.assign({}, S.me, patch); this.render(); },
+
+  // Routes a sip penalty through The Mole's one-time shield: if it's
+  // active, the sips don't land on the mole at all — instead a redirect
+  // picker opens so they can pick someone else to take it.
+  _applySelfPenalty(amount) {
+    if (S.me.is_mole && S.me.mole_shield && S.players.length > 1) {
+      S._moleRedirectAmount = amount;
+      this._patchMe({ mole_shield: false });
+      return;
+    }
+    this._patchMe({ sips: Number(S.me.sips || 0) + amount });
+  },
+  moleRedirect(targetId) {
+    const amount = S._moleRedirectAmount;
+    S._moleRedirectAmount = null;
+    const target = S.players.find(p => p.id === targetId);
+    if (target) {
+      KairosDB.updatePlayer(targetId, { sips: Number(target.sips || 0) + amount });
+      target.sips = Number(target.sips || 0) + amount;
+    }
+    this.render();
+  },
+  _moleRedirectOverlay() {
+    const others = S.players.filter(p => p.id !== S.me.id);
+    return `
+      <div class="blackout-overlay" style="background:rgba(12,6,22,.94)">
+        <div class="scene-title" style="color:var(--violet)">🕵️ ${t('moleShieldTitle')}</div>
+        <div class="scene-sub">${t('moleShieldSub')}</div>
+        <div class="players-row">${others.map(p => `<div class="player-tag" style="cursor:pointer" onclick="Kairos.moleRedirect('${p.id}')">${escapeHtml(p.name)}</div>`).join('')}</div>
+      </div>`;
+  },
 
   goScreen(screen) {
     const state = Object.assign({}, S.room.state);
@@ -278,7 +358,8 @@ const Kairos = {
     if (!S.room) return;
     document.getElementById('topbar').innerHTML = this._topbarRoom();
     document.getElementById('scenenav').innerHTML = S.role === 'host' ? this._sceneNav() : '';
-    document.getElementById('stage').innerHTML = this._stage();
+    document.getElementById('stage').innerHTML = this._stage() +
+      (S.role === 'player' && S._moleRedirectAmount != null ? this._moleRedirectOverlay() : '');
     this._afterRender();
   },
 
@@ -297,6 +378,9 @@ const Kairos = {
         <div class="topbar-right">
           <div class="room-pill" onclick="Kairos.copyLink()" title="Copy join link"><span>${t('roomCodeLabel')}</span><b>${escapeHtml(S.roomCode)}</b></div>
           ${lang}${guideBtn}
+          <div class="divider-v"></div>
+          <div class="icon-btn" onclick="Kairos.triggerTax()">${t('twistTaxBtn')}</div>
+          <div class="icon-btn" onclick="Kairos.triggerMole()">${t('twistMoleBtn')}</div>
           <div class="divider-v"></div>
           <div class="live-dot"><span class="dot"></span>${t('live')} · ${S.players.length} ${t('playersLabel')}</div>
           <div class="icon-btn" onclick="Kairos.leaveRoom()">⏏</div>
@@ -421,17 +505,26 @@ const Kairos = {
     const syn = S.room.state.syn || { round: 0 };
     const round = (syn.round || 0) + 1;
     const goAt = Date.now() + SYN_ARM_MIN_MS + Math.random() * (SYN_ARM_MAX_MS - SYN_ARM_MIN_MS);
+    const inverted = !!syn.nextInverted;
     S._synGoFired = false;
     KairosAudio.startShepard();
-    this._patchRoom({ state: Object.assign({}, S.room.state, { syn: { phase: 'armed', goAt, round } }) });
+    this._patchRoom({ state: Object.assign({}, S.room.state, { syn: { phase: 'armed', goAt, round, inverted } }) });
+    if (inverted) this._fireTwist('polarity');
+  },
+  toggleInvertNext() {
+    const syn = S.room.state.syn || {};
+    this._patchRoom({ state: Object.assign({}, S.room.state, { syn: Object.assign({}, syn, { nextInverted: !syn.nextInverted }) }) });
   },
   synResolveAndNext() {
-    const round = (S.room.state.syn || {}).round || 0;
+    const syn = S.room.state.syn || {};
+    const round = syn.round || 0;
     const entries = S.players.filter(p => p.last_round === round && p.last_reaction_ms != null);
     const valid = entries.filter(p => p.last_reaction_ms >= 0);
     if (valid.length) {
-      const slowest = valid.reduce((a, b) => (a.last_reaction_ms > b.last_reaction_ms ? a : b));
-      KairosDB.updatePlayer(slowest.id, { sips: Number(slowest.sips || 0) + SYN_SLOWEST_PENALTY, penalty_count: (slowest.penalty_count || 0) + 1 });
+      const target = syn.inverted
+        ? valid.reduce((a, b) => (a.last_reaction_ms < b.last_reaction_ms ? a : b))
+        : valid.reduce((a, b) => (a.last_reaction_ms > b.last_reaction_ms ? a : b));
+      KairosDB.updatePlayer(target.id, { sips: Number(target.sips || 0) + SYN_SLOWEST_PENALTY, penalty_count: (target.penalty_count || 0) + 1 });
     } else {
       this.toast(t('needPlayers'));
     }
@@ -454,7 +547,7 @@ const Kairos = {
           <span class="word">${syn.phase === 'idle' ? t('synStandT') : (S._synGoFired ? t('synStrikeT') : t('synHoldT'))}</span>
         </div>
       </div>
-      <div class="scene-sub" style="letter-spacing:.2em;text-transform:uppercase">${syn.phase === 'idle' ? '' : word}</div>
+      <div class="scene-sub" style="letter-spacing:.2em;text-transform:uppercase">${syn.phase === 'idle' ? '' : word}${syn.inverted ? ' · 🔄' : ''}</div>
       <div class="reaction-feed">
         <div class="scene-label">${t('synFeedTitle')}</div>
         ${entries.map(p => p.last_reaction_ms === -1
@@ -466,6 +559,7 @@ const Kairos = {
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
         <button class="btn btn-primary" ${syn.phase !== 'idle' ? 'disabled' : ''} onclick="Kairos.synArm()">${syn.phase === 'idle' ? t('synArmBtn') : t('synArming')}</button>
         ${syn.phase !== 'idle' ? `<button class="btn btn-ghost" onclick="Kairos.synResolveAndNext()">${t('synNextBtn')}</button>` : ''}
+        <button class="btn btn-ghost" ${syn.phase !== 'idle' ? 'disabled' : ''} onclick="Kairos.toggleInvertNext()">${syn.nextInverted ? t('invertNextOn') : t('invertNextOff')}</button>
         <button class="btn btn-ghost" onclick="Kairos.goScreen('vault')">${t('navVault')} ▶</button>
       </div>`;
   },
@@ -477,7 +571,8 @@ const Kairos = {
     if (syn.phase !== 'armed') return;
     if (!S._synGoFired) {
       vibrate(80);
-      this._patchMe({ last_reaction_ms: -1, last_round: round, sips: Number(S.me.sips || 0) + SYN_FOUL_PENALTY, penalty_count: (S.me.penalty_count || 0) + 1 });
+      this._patchMe({ last_reaction_ms: -1, last_round: round, penalty_count: (S.me.penalty_count || 0) + 1 });
+      this._applySelfPenalty(SYN_FOUL_PENALTY);
       return;
     }
     const ms = Math.max(1, Math.round(Date.now() - syn.goAt));
@@ -494,7 +589,7 @@ const Kairos = {
     else if (answered && S.me.last_reaction_ms === -2) { cls = 'foul'; title = t('synTimeoutT'); sub = t('synTimeoutS'); }
     else if (answered) { title = t('synReactT'); sub = t('synReactS'); showMs = true; }
     else if (S._synGoFired) {
-      cls = 'go'; title = t('synStrikeT'); sub = t('synStrikeS');
+      cls = 'go'; title = (syn.inverted ? '🔄 ' : '') + t('synStrikeT'); sub = t('synStrikeS');
       countdown = Math.max(0, Math.ceil((syn.goAt + SYN_TAP_WINDOW_MS - Date.now()) / 1000));
     }
     else { cls = 'armed'; title = t('synHoldT'); sub = t('synHoldS'); }
@@ -533,7 +628,8 @@ const Kairos = {
       this._patchMe({ vault_result: 'won', vault_round: v.round, correct_count: (S.me.correct_count || 0) + 1 });
     } else {
       vibrate([60, 40, 60]);
-      this._patchMe({ vault_result: 'lost', vault_round: v.round, sips: Number(S.me.sips || 0) + wager, penalty_count: (S.me.penalty_count || 0) + 1 });
+      this._patchMe({ vault_result: 'lost', vault_round: v.round, penalty_count: (S.me.penalty_count || 0) + 1 });
+      this._applySelfPenalty(wager);
     }
   },
   vaultDrankConfirm() { this._patchMe({ vault_result: 'idle' }); },
@@ -614,7 +710,8 @@ const Kairos = {
       const wrong = (S.me.paradox_wrong || 0) + 1;
       if (wrong >= 2) {
         vibrate([120, 60, 120]);
-        this._patchMe({ paradox_pick: idx, paradox_round: p.round, paradox_wrong: 0, blackout: true, sips: Number(S.me.sips || 0) + 1, penalty_count: (S.me.penalty_count || 0) + 1 });
+        this._patchMe({ paradox_pick: idx, paradox_round: p.round, paradox_wrong: 0, blackout: true, penalty_count: (S.me.penalty_count || 0) + 1 });
+        this._applySelfPenalty(PARADOX_BLACKOUT_PENALTY);
       } else {
         vibrate(60);
         this._patchMe({ paradox_pick: idx, paradox_round: p.round, paradox_wrong: wrong });
@@ -696,15 +793,34 @@ const Kairos = {
         <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:12px;color:rgba(255,255,255,.5)"><span>${t('totalSips')}</span><b style="color:#ff8d9c">${total}</b></div>
       </div>`;
   },
-  _reportHost() { return this._reportBody() + `<button class="btn btn-primary" onclick="Kairos.playAgain()">${t('playAgainBtn')}</button>`; },
+  _reportHost() {
+    const inversionBtn = S._inversionDone
+      ? `<button class="btn btn-ghost" disabled>${t('finalInversionDone')}</button>`
+      : `<button class="btn btn-ghost" onclick="Kairos.triggerFinalInversion()">${t('finalInversionBtn')}</button>`;
+    return this._reportBody() + `<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">${inversionBtn}<button class="btn btn-primary" onclick="Kairos.playAgain()">${t('playAgainBtn')}</button></div>`;
+  },
   _reportPlayer() { return this._reportBody(); },
+  triggerFinalInversion() {
+    if (S._inversionDone || S.players.length < 2) return;
+    const maxSips = Math.max(...S.players.map(p => Number(p.sips || 0)));
+    const lowest = S.players.reduce((a, b) => (Number(a.sips || 0) <= Number(b.sips || 0) ? a : b));
+    const gap = maxSips - Number(lowest.sips || 0);
+    S._inversionDone = true;
+    if (gap > 0) {
+      KairosDB.updatePlayer(lowest.id, { sips: maxSips });
+      lowest.sips = maxSips;
+    }
+    this._fireTwist('inversion');
+    this.render();
+  },
   async playAgain() {
+    S._inversionDone = false;
     await KairosDB.updateRoom(S.roomCode, { screen: 'lounge', state: {}, round: 0 });
     for (const p of S.players) {
       await KairosDB.updatePlayer(p.id, {
         sips: 0, ready: false, last_reaction_ms: null, last_round: 0, total_reaction_ms: 0, reaction_count: 0,
         vault_bet: '1', vault_round: 0, vault_result: 'idle', paradox_pick: null, paradox_round: 0,
-        paradox_wrong: 0, blackout: false, penalty_count: 0, correct_count: 0,
+        paradox_wrong: 0, blackout: false, penalty_count: 0, correct_count: 0, is_mole: false, mole_shield: false,
       });
     }
   },

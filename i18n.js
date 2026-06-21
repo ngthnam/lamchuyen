@@ -61,6 +61,16 @@ const KairosI18n = {
     crashTitle: 'Lỗi Hệ Thống', crashSub: 'Nhiều shot phạt nhất, phản xạ chậm nhất trong đêm nay.',
     ledgerTitle: 'Sổ Cái Chất Lỏng', totalSips: 'Tổng số ngụm tối nay', playAgainBtn: 'Chơi lại ↺', noData: 'Chưa có đủ dữ liệu',
 
+    twistTax: '🎲 Thuế Tập Thể! Mọi người uống nửa ngụm — không lý do.',
+    twistPolarity: '🔄 Đảo Cực! Vòng Synapse này AI NHANH NHẤT sẽ bị phạt.',
+    twistMole: '🕵️ Một kẻ nội gián đã len lỏi vào phòng…',
+    twistInversion: '🌀 SỰ ĐẢO NGƯỢC CUỐI CÙNG! Sổ ngụm vừa bị lật ngược.',
+    moleRevealToast: '🕵️ Bạn LÀ kẻ nội gián. Lần bị phạt tiếp theo, bạn có thể chuyển nó sang người khác.',
+    moleShieldTitle: 'LÁ CHẮN NỘI GIÁN', moleShieldSub: 'Chọn 1 người để gánh ngụm phạt thay bạn:',
+    twistTaxBtn: '🎲 Thuế tập thể', twistMoleBtn: '🕵️ Kẻ nội gián',
+    invertNextOn: '🔄 Đảo cực: vòng tới (đã kích hoạt)', invertNextOff: '🔄 Đảo cực vòng tới',
+    finalInversionBtn: '🌀 Kích hoạt Sự Đảo Ngược Cuối Cùng', finalInversionDone: '🌀 Đã đảo ngược',
+
     guideTitle: 'Cách chơi KAIROS', guideIntro: 'Một trò chơi uống rượu điện ảnh cho TV + điện thoại.',
     guideLockTitle: 'Trang hướng dẫn được bảo vệ', guideLockSub: 'Nhập mật khẩu để xem luật chơi. (Gợi ý: "admin")',
     guidePassPlaceholder: 'Mật khẩu', guideUnlockBtn: 'Mở khóa', guideWrong: 'Sai mật khẩu. Thử lại.',
@@ -139,6 +149,16 @@ const KairosI18n = {
     siliconTitle: 'The Silicon Brain', siliconSub: 'Fastest reflexes, fewest mistakes tonight.',
     crashTitle: 'The System Crash', crashSub: 'Most penalty shots, slowest reflexes tonight.',
     ledgerTitle: 'Liquid Ledger', totalSips: 'Total sips tonight', playAgainBtn: 'Run it back ↺', noData: 'Not enough data yet',
+
+    twistTax: '🎲 Group Tax! Everyone drinks half a sip — no reason given.',
+    twistPolarity: '🔄 Polarity Reversal! Whoever is FASTEST this Synapse round gets penalized.',
+    twistMole: '🕵️ A mole has slipped into the room…',
+    twistInversion: '🌀 THE FINAL INVERSION! The sip ledger just flipped.',
+    moleRevealToast: '🕵️ You ARE the mole. Your next penalty can be redirected to someone else.',
+    moleShieldTitle: 'MOLE SHIELD', moleShieldSub: 'Pick someone to take this penalty instead of you:',
+    twistTaxBtn: '🎲 Group tax', twistMoleBtn: '🕵️ The mole',
+    invertNextOn: '🔄 Invert next round (armed)', invertNextOff: '🔄 Invert next round',
+    finalInversionBtn: '🌀 Trigger the Final Inversion', finalInversionDone: '🌀 Inverted',
 
     guideTitle: 'How to play KAIROS', guideIntro: 'A cinematic drinking game for TV + phone.',
     guideLockTitle: 'This guide is protected', guideLockSub: 'Enter the password to view the rules. (Hint: "admin")',

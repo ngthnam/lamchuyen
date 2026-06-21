@@ -47,9 +47,19 @@ create table if not exists kairos_players (
   penalty_count      integer not null default 0,
   correct_count      integer not null default 0,
 
+  -- Plot-twist: The Mole — secret per-player flags, never exposed to
+  -- anyone but the player themselves on the client.
+  is_mole            boolean not null default false,
+  mole_shield        boolean not null default false,
+
   joined_at          timestamptz not null default now(),
   last_seen          timestamptz not null default now()
 );
+
+-- Added after the initial release — safe no-ops on a fresh table, but
+-- required for rooms created before the plot-twist feature shipped.
+alter table kairos_players add column if not exists is_mole boolean not null default false;
+alter table kairos_players add column if not exists mole_shield boolean not null default false;
 
 create index if not exists kairos_players_room_idx on kairos_players(room_code);
 
