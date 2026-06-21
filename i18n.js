@@ -35,8 +35,9 @@ const KairosI18n = {
     synReactT: 'Phản xạ', synReactS: 'mili-giây',
     synFoulT: 'CHẠM SỚM', synFoulS: 'Phạt nửa ngụm — bằng một nửa mức phạt của người chậm nhất vòng này.',
     synFoulConfirm: 'Đã uống — tiếp tục',
+    synTimeoutT: 'HẾT GIỜ', synTimeoutS: 'Bạn không chạm kịp trong 10 giây — tính như người chậm nhất, phạt đầy.',
     synHostRising: 'ÂM THANH ĐANG DÂNG', synHostWait: 'CHỜ MÀU ĐỎ XUẤT HIỆN…', synHostNow: 'ĐỎ RỒI — CHẠM NGAY',
-    synHostLogged: 'ĐÃ GHI NHẬN PHẢN XẠ', synHostFoul: 'CÓ NGƯỜI CHẠM QUÁ SỚM',
+    synHostLogged: 'ĐÃ GHI NHẬN PHẢN XẠ', synHostFoul: 'CÓ NGƯỜI CHẠM QUÁ SỚM', synHostTimeout: 'CÓ NGƯỜI KHÔNG CHẠM KỊP',
     synFeedTitle: 'Bảng phản xạ vòng này',
 
     vltTitle: 'Két Sắt · Câu Đố', vltPlaceBet: 'Đặt cược trước, rồi mở khóa dãy số.',
@@ -113,8 +114,9 @@ const KairosI18n = {
     synReactT: 'Reaction', synReactS: 'milliseconds',
     synFoulT: 'FOUL START', synFoulS: 'Half-sip penalty — half of whatever the slowest tapper drinks this round.',
     synFoulConfirm: 'Drank it — continue',
+    synTimeoutT: 'OUT OF TIME', synTimeoutS: 'You missed the 10-second window — counted as the slowest tapper, full penalty.',
     synHostRising: 'TONE RISING', synHostWait: 'WAIT FOR CRIMSON…', synHostNow: 'CRIMSON — STRIKE NOW',
-    synHostLogged: 'REFLEX LOGGED', synHostFoul: 'SOMEONE JUMPED THE GUN',
+    synHostLogged: 'REFLEX LOGGED', synHostFoul: 'SOMEONE JUMPED THE GUN', synHostTimeout: 'SOMEONE MISSED THE WINDOW',
     synFeedTitle: "This round's reflex board",
 
     vltTitle: 'The Vault · Puzzle', vltPlaceBet: 'Place your wager, then crack the sequence.',

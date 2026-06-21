@@ -11,6 +11,12 @@
 // of that — defined off the same constant so the two stay linked.
 const SYN_SLOWEST_PENALTY = 1;
 const SYN_FOUL_PENALTY = SYN_SLOWEST_PENALTY / 2;
+// Random wait before "go" is re-rolled every round, kept short on purpose
+// so a round never drags. Once "go" fires, players get a hard window to
+// tap before they're auto-counted as having lost the round outright.
+const SYN_ARM_MIN_MS = 100;
+const SYN_ARM_MAX_MS = 10000;
+const SYN_TAP_WINDOW_MS = 10000;
 
 const VAULT_PUZZLES = [
   { seq: [2, 6, 12, 20, 30], answer: 42 },
@@ -205,7 +211,7 @@ const Kairos = {
 
   // Host-side cinematic feedback fired purely from watching player rows change.
   _hostReactToPlayerEvent(prev, row) {
-    const becameFoul = row.last_reaction_ms === -1 && (!prev || prev.last_round !== row.last_round);
+    const becameFoul = (row.last_reaction_ms === -1 || row.last_reaction_ms === -2) && (!prev || prev.last_round !== row.last_round);
     const becameLost = row.vault_result === 'lost' && (!prev || prev.vault_result !== 'lost');
     const becameBlackout = row.blackout && !(prev && prev.blackout);
     if (becameFoul || becameLost || becameBlackout) { this._fireFlash(); KairosAudio.braam(); }
@@ -231,11 +237,26 @@ const Kairos = {
   _tick() {
     if (!S.room || S.room.screen !== 'synapse') return;
     const syn = S.room.state.syn || {};
-    if (syn.phase === 'armed' && syn.goAt && Date.now() >= syn.goAt && !S._synGoFired) {
+    if (syn.phase !== 'armed' || !syn.goAt) return;
+    if (Date.now() >= syn.goAt && !S._synGoFired) {
       S._synGoFired = true;
+      KairosAudio.goSignal();
       if (S.role === 'host') KairosAudio.stopShepard();
+      else vibrate(40);
       this.render();
+      return;
     }
+    // Hard 10s tap window: anyone who hasn't answered by the deadline
+    // auto-loses the round, same as if they'd been the slowest tapper.
+    if (S.role === 'player' && S.me && S.me.last_round !== syn.round && Date.now() >= syn.goAt + SYN_TAP_WINDOW_MS) {
+      this._synTimeout(syn.round);
+      return;
+    }
+    if (S._synGoFired) this.render(); // keep the on-screen countdown live
+  },
+  _synTimeout(round) {
+    vibrate([100, 60, 100]);
+    this._patchMe({ last_reaction_ms: -2, last_round: round, sips: Number(S.me.sips || 0) + SYN_SLOWEST_PENALTY, penalty_count: (S.me.penalty_count || 0) + 1 });
   },
 
   // ---------- room write helpers ----------
@@ -399,7 +420,7 @@ const Kairos = {
   synArm() {
     const syn = S.room.state.syn || { round: 0 };
     const round = (syn.round || 0) + 1;
-    const goAt = Date.now() + 1300 + Math.random() * 3200;
+    const goAt = Date.now() + SYN_ARM_MIN_MS + Math.random() * (SYN_ARM_MAX_MS - SYN_ARM_MIN_MS);
     S._synGoFired = false;
     KairosAudio.startShepard();
     this._patchRoom({ state: Object.assign({}, S.room.state, { syn: { phase: 'armed', goAt, round } }) });
@@ -421,8 +442,9 @@ const Kairos = {
     const live = syn.phase === 'armed' && !S._synGoFired;
     const word = live ? t('synHostWait') : (S._synGoFired ? t('synHostNow') : t('synHostRising'));
     const round = syn.round || 0;
+    const rank = p => p.last_reaction_ms === -1 ? 1e9 : p.last_reaction_ms === -2 ? 2e9 : p.last_reaction_ms;
     const entries = S.players.filter(p => p.last_round === round && p.last_reaction_ms != null)
-      .sort((a, b) => (a.last_reaction_ms === -1 ? 1 : b.last_reaction_ms === -1 ? -1 : a.last_reaction_ms - b.last_reaction_ms));
+      .sort((a, b) => rank(a) - rank(b));
     return `
       <div class="scene-label">${t('synLabel')}</div>
       <div class="syn-ring-wrap">
@@ -437,6 +459,8 @@ const Kairos = {
         <div class="scene-label">${t('synFeedTitle')}</div>
         ${entries.map(p => p.last_reaction_ms === -1
           ? `<div class="reaction-row foul"><span>${escapeHtml(p.name)}</span><b>${t('synHostFoul')} · -${SYN_FOUL_PENALTY} 🥃</b></div>`
+          : p.last_reaction_ms === -2
+          ? `<div class="reaction-row foul"><span>${escapeHtml(p.name)}</span><b>${t('synHostTimeout')} · -${SYN_SLOWEST_PENALTY} 🥃</b></div>`
           : `<div class="reaction-row"><span>${escapeHtml(p.name)}</span><b>${p.last_reaction_ms} ms</b></div>`).join('')}
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center">
@@ -464,11 +488,15 @@ const Kairos = {
     const syn = S.room.state.syn || { phase: 'idle' };
     const round = syn.round || 0;
     const answered = S.me && S.me.last_round === round && syn.phase !== 'idle';
-    let cls = '', title, sub, showMs = false;
+    let cls = '', title, sub, showMs = false, countdown = null;
     if (syn.phase === 'idle') { title = t('synStandT'); sub = t('synStandS'); }
     else if (answered && S.me.last_reaction_ms === -1) { cls = 'foul'; title = t('synFoulT'); sub = t('synFoulS'); }
+    else if (answered && S.me.last_reaction_ms === -2) { cls = 'foul'; title = t('synTimeoutT'); sub = t('synTimeoutS'); }
     else if (answered) { title = t('synReactT'); sub = t('synReactS'); showMs = true; }
-    else if (S._synGoFired) { cls = 'go'; title = t('synStrikeT'); sub = t('synStrikeS'); }
+    else if (S._synGoFired) {
+      cls = 'go'; title = t('synStrikeT'); sub = t('synStrikeS');
+      countdown = Math.max(0, Math.ceil((syn.goAt + SYN_TAP_WINDOW_MS - Date.now()) / 1000));
+    }
     else { cls = 'armed'; title = t('synHoldT'); sub = t('synHoldS'); }
     const bg = cls === 'go' ? 'radial-gradient(circle at 50% 40%, rgba(255,40,70,.35), rgba(60,4,10,.6))'
       : cls === 'armed' ? 'radial-gradient(circle at 50% 40%, rgba(139,92,246,.18), rgba(20,8,40,.6))'
@@ -481,6 +509,7 @@ const Kairos = {
         <div class="title">${title}</div>
         <div class="sub">${sub}</div>
         ${showMs ? `<div class="ms">${S.me.last_reaction_ms} ms</div>` : ''}
+        ${countdown != null ? `<div class="ms">${countdown}s</div>` : ''}
       </div>`;
   },
 

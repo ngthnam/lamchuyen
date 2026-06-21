@@ -86,6 +86,25 @@ const KairosAudio = {
     });
   },
 
+  // Sharp double-beep marking the instant "go" fires — the one sound every
+  // device plays in sync since it comes from the same shared timestamp.
+  goSignal() {
+    const ctx = this.ensure();
+    const t = ctx.currentTime;
+    [880, 1320].forEach((freq, i) => {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = freq;
+      const g = ctx.createGain();
+      const start = t + i * 0.09;
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(0.2, start + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 0.16);
+      o.connect(g).connect(ctx.destination);
+      o.start(start); o.stop(start + 0.18);
+    });
+  },
+
   // Crisp strike hit for a successful tap.
   strike() {
     const ctx = this.ensure();
