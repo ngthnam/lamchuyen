@@ -78,8 +78,23 @@ drop policy if exists kairos_players_all on kairos_players;
 create policy kairos_players_all on kairos_players for all using (true) with check (true);
 
 -- Enable Realtime change feeds so the TV and phones stay in sync.
-alter publication supabase_realtime add table kairos_rooms;
-alter publication supabase_realtime add table kairos_players;
+-- (guarded — "alter publication add table" errors if already a member,
+-- so this checks first to stay safe to re-run)
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'kairos_rooms'
+  ) then
+    alter publication supabase_realtime add table kairos_rooms;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'kairos_players'
+  ) then
+    alter publication supabase_realtime add table kairos_players;
+  end if;
+end $$;
 
 -- Housekeeping: rooms older than 12h are stale party sessions, safe to prune
 -- manually any time with:
