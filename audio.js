@@ -1,11 +1,5 @@
 'use strict';
 
-/* ─── KAIROS AUDIO ENGINE ───
-   Procedural cinematic stingers via Web Audio — no licensed audio assets,
-   just oscillators/noise shaped to evoke the brief: a rising drone under
-   tension, a low brass "BRAAM" hit on penalties, and a ticking clockwork
-   bed for the puzzle game. ──────────────────────────────── */
-
 const KairosAudio = {
   ctx: null,
   _shepard: null,
@@ -16,138 +10,134 @@ const KairosAudio = {
     return this.ctx;
   },
 
-  _env(gainNode, ctx, attack, hold, release, peak) {
-    const t = ctx.currentTime;
-    gainNode.gain.cancelScheduledValues(t);
-    gainNode.gain.setValueAtTime(0, t);
-    gainNode.gain.linearRampToValueAtTime(peak, t + attack);
-    gainNode.gain.setValueAtTime(peak, t + attack + hold);
-    gainNode.gain.linearRampToValueAtTime(0, t + attack + hold + release);
-  },
-
-  // Rising tension drone — layered detuned sawtooth pad that climbs in pitch
-  // for as long as a Synapse round is "armed".
   startShepard() {
     const ctx = this.ensure();
     this.stopShepard();
     const master = ctx.createGain();
-    master.gain.value = 0;
-    master.gain.linearRampToValueAtTime(0.16, ctx.currentTime + 0.6);
+    master.gain.value = 0.05;
     master.connect(ctx.destination);
-
-    const oscs = [80, 120, 160].map(freq => {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.value = 0.5;
-      o.connect(g).connect(master);
-      o.start();
-      return o;
-    });
-    this._shepard = { master, oscs, startedAt: ctx.currentTime };
-    this._shepardTick = setInterval(() => {
-      if (!this._shepard) return;
-      const elapsed = ctx.currentTime - this._shepard.startedAt;
-      this._shepard.oscs.forEach((o, i) => {
-        o.frequency.setTargetAtTime(80 + i * 40 + elapsed * 14, ctx.currentTime, 0.15);
-      });
-    }, 120);
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 90;
+    osc.connect(master);
+    osc.start();
+    this._shepard = { master, osc };
   },
 
   stopShepard() {
-    if (this._shepardTick) clearInterval(this._shepardTick);
-    if (this._shepard) {
-      const { master, oscs } = this._shepard;
-      const ctx = this.ctx;
-      master.gain.cancelScheduledValues(ctx.currentTime);
-      master.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.18);
-      oscs.forEach(o => o.stop(ctx.currentTime + 0.25));
-      this._shepard = null;
-    }
+    if (!this._shepard) return;
+    const ctx = this.ctx;
+    const { master, osc } = this._shepard;
+    try {
+      master.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+      osc.stop(ctx.currentTime + 0.15);
+    } catch (e) {}
+    this._shepard = null;
   },
 
-  // Low brass "BRAAM" stinger for fouls / blackouts / wrong answers.
-  braam() {
+  _tone(freq, dur, type) {
     const ctx = this.ensure();
-    const t = ctx.currentTime;
-    [55, 82.5, 110].forEach((freq, i) => {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.value = 0;
-      o.connect(g).connect(ctx.destination);
-      g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.22 / (i + 1), t + 0.08);
-      g.gain.exponentialRampToValueAtTime(0.001, t + 1.6);
-      o.start(t);
-      o.stop(t + 1.7);
-    });
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.16, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
   },
 
-  // Sharp double-beep marking the instant "go" fires — the one sound every
-  // device plays in sync since it comes from the same shared timestamp.
-  goSignal() {
-    const ctx = this.ensure();
-    const t = ctx.currentTime;
-    [880, 1320].forEach((freq, i) => {
-      const o = ctx.createOscillator();
-      o.type = 'square';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      const start = t + i * 0.09;
-      g.gain.setValueAtTime(0, start);
-      g.gain.linearRampToValueAtTime(0.2, start + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.001, start + 0.16);
-      o.connect(g).connect(ctx.destination);
-      o.start(start); o.stop(start + 0.18);
-    });
-  },
-
-  // Crisp strike hit for a successful tap.
-  strike() {
-    const ctx = this.ensure();
-    const t = ctx.currentTime;
-    const o = ctx.createOscillator();
-    o.type = 'triangle';
-    o.frequency.setValueAtTime(820, t);
-    o.frequency.exponentialRampToValueAtTime(220, t + 0.18);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.25, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
-    o.connect(g).connect(ctx.destination);
-    o.start(t); o.stop(t + 0.22);
-  },
-
-  // A single clockwork tick for the Vault puzzle.
-  tick() {
-    const ctx = this.ensure();
-    const t = ctx.currentTime;
-    const o = ctx.createOscillator();
-    o.type = 'square';
-    o.frequency.value = 1400;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.06, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
-    o.connect(g).connect(ctx.destination);
-    o.start(t); o.stop(t + 0.06);
-  },
-
-  // Bright success chime.
-  chime() {
-    const ctx = this.ensure();
-    const t = ctx.currentTime;
-    [660, 880, 1320].forEach((freq, i) => {
-      const o = ctx.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = freq;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, t + i * 0.05);
-      g.gain.linearRampToValueAtTime(0.18, t + i * 0.05 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.05 + 0.5);
-      o.connect(g).connect(ctx.destination);
-      o.start(t + i * 0.05); o.stop(t + i * 0.05 + 0.55);
-    });
-  },
+  braam() { this._tone(90, 0.5, 'sawtooth'); },
+  goSignal() { this._tone(880, 0.16, 'square'); setTimeout(() => this._tone(1320, 0.16, 'square'), 90); },
+  strike() { this._tone(620, 0.18, 'triangle'); },
+  tick() { this._tone(1400, 0.05, 'square'); },
+  chime() { this._tone(660, 0.35, 'sine'); setTimeout(() => this._tone(990, 0.35, 'sine'), 70); },
 };
+
+(function applySynapseFixWhenReady() {
+  function apply() {
+    try {
+      if (typeof Kairos === 'undefined' || typeof S === 'undefined' || typeof KairosDB === 'undefined') return false;
+      if (!Kairos || Kairos.__synapseFixApplied) return true;
+      if (typeof Kairos.synArm !== 'function' || typeof Kairos._tick !== 'function') return false;
+
+      Kairos.__synapseFixApplied = true;
+
+      Kairos.synArm = function () {
+        const syn = S.room.state.syn || { round: 0 };
+        const round = (syn.round || 0) + 1;
+        const goAt = Date.now() + 100 + Math.random() * 1400;
+        const inverted = !!syn.nextInverted;
+        S._synGoFired = false;
+        KairosAudio.startShepard();
+        this._patchRoom({
+          state: Object.assign({}, S.room.state, {
+            syn: { phase: 'armed', goAt, round, inverted, hostResolvedTimeouts: false }
+          })
+        });
+        if (inverted) this._fireTwist('polarity');
+      };
+
+      Kairos._tick = function () {
+        if (!S.room || S.room.screen !== 'synapse') return;
+        const syn = S.room.state.syn || {};
+        if (syn.phase !== 'armed' || !syn.goAt) return;
+
+        if (Date.now() >= syn.goAt && !S._synGoFired) {
+          S._synGoFired = true;
+          KairosAudio.goSignal();
+          if (S.role === 'host') KairosAudio.stopShepard();
+          else if (navigator.vibrate) navigator.vibrate(40);
+          this.render();
+          return;
+        }
+
+        const windowMs = 5000;
+        const round = syn.round || 0;
+
+        if (S.role === 'host' && S._synGoFired && !syn.hostResolvedTimeouts && Date.now() >= syn.goAt + windowMs) {
+          const updates = S.players.filter(p => p.last_round !== round).map(p => {
+            p.last_reaction_ms = -2;
+            p.last_round = round;
+            p.penalty_count = Number(p.penalty_count || 0) + 1;
+            p.sips = Number(p.sips || 0) + SYN_SLOWEST_PENALTY;
+            return KairosDB.updatePlayer(p.id, {
+              last_reaction_ms: -2,
+              last_round: round,
+              penalty_count: p.penalty_count,
+              sips: p.sips
+            });
+          });
+          Promise.allSettled(updates).finally(() => {
+            this._patchRoom({
+              state: Object.assign({}, S.room.state, {
+                syn: Object.assign({}, syn, { hostResolvedTimeouts: true })
+              })
+            });
+          });
+          this.render();
+          return;
+        }
+
+        if (S.role === 'player' && S.me && S.me.last_round !== round && Date.now() >= syn.goAt + windowMs) {
+          this._synTimeout(round);
+          return;
+        }
+
+        if (S._synGoFired) this.render();
+      };
+
+      return true;
+    } catch (e) {
+      console.error('Synapse fix failed:', e);
+      return true;
+    }
+  }
+
+  if (!apply()) {
+    const timer = setInterval(() => {
+      if (apply()) clearInterval(timer);
+    }, 100);
+  }
+})();
