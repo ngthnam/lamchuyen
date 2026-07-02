@@ -21,6 +21,7 @@
   }
 
   try {
+    document.title = 'KAIROS';
     var k = '__kairos_storage_test__';
     window.localStorage.setItem(k, '1');
     window.localStorage.removeItem(k);
@@ -132,8 +133,20 @@ const KairosAudio = {
     };
   }
 
+  function cleanTopbarBrand(html) {
+    return String(html)
+      .replace(/<div class="divider-v"><\/div>\s*<div class="tagline">[\s\S]*?<\/div>/g, '')
+      .replace(/<div class="tagline">[\s\S]*?<\/div>/g, '');
+  }
+
   function apply() {
     try {
+      if (typeof KairosI18n !== 'undefined' && KairosI18n) {
+        if (KairosI18n.vi) KairosI18n.vi.tagline = '';
+        if (KairosI18n.en) KairosI18n.en.tagline = '';
+      }
+      if (typeof document !== 'undefined') document.title = 'KAIROS';
+
       if (typeof Kairos === 'undefined' || typeof S === 'undefined' || typeof KairosDB === 'undefined') return false;
       if (!Kairos) return true;
       if (typeof Kairos.synArm !== 'function' || typeof Kairos._tick !== 'function' || typeof Kairos._topbarRoom !== 'function') return false;
@@ -166,7 +179,7 @@ const KairosAudio = {
 
         const originalTopbarRoom = Kairos._topbarRoom;
         Kairos._topbarRoom = function () {
-          const html = originalTopbarRoom.call(this);
+          let html = cleanTopbarBrand(originalTopbarRoom.call(this));
           if (S.role !== 'host') return html;
           const resetBtn = '<div class="icon-btn" onclick="Kairos.resetGame()">↺ Reset</div>';
           if (html.includes('Kairos.resetGame')) return html;
