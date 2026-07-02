@@ -55,82 +55,150 @@ const KairosAudio = {
   chime() { this._tone(660, 0.35, 'sine'); setTimeout(() => this._tone(990, 0.35, 'sine'), 70); },
 };
 
-(function applySynapseFixWhenReady() {
+(function applyLiveFixesWhenReady() {
+  function resetPlayerPatch() {
+    return {
+      sips: 0,
+      ready: false,
+      last_reaction_ms: null,
+      last_round: 0,
+      total_reaction_ms: 0,
+      reaction_count: 0,
+      vault_bet: '1',
+      vault_round: 0,
+      vault_result: 'idle',
+      paradox_pick: null,
+      paradox_round: 0,
+      paradox_wrong: 0,
+      blackout: false,
+      penalty_count: 0,
+      correct_count: 0,
+      is_mole: false,
+      mole_shield: false
+    };
+  }
+
   function apply() {
     try {
       if (typeof Kairos === 'undefined' || typeof S === 'undefined' || typeof KairosDB === 'undefined') return false;
-      if (!Kairos || Kairos.__synapseFixApplied) return true;
-      if (typeof Kairos.synArm !== 'function' || typeof Kairos._tick !== 'function') return false;
+      if (!Kairos) return true;
+      if (typeof Kairos.synArm !== 'function' || typeof Kairos._tick !== 'function' || typeof Kairos._topbarRoom !== 'function') return false;
 
-      Kairos.__synapseFixApplied = true;
+      if (!Kairos.__resetGameApplied) {
+        Kairos.__resetGameApplied = true;
 
-      Kairos.synArm = function () {
-        const syn = S.room.state.syn || { round: 0 };
-        const round = (syn.round || 0) + 1;
-        const goAt = Date.now() + 100 + Math.random() * 1400;
-        const inverted = !!syn.nextInverted;
-        S._synGoFired = false;
-        KairosAudio.startShepard();
-        this._patchRoom({
-          state: Object.assign({}, S.room.state, {
-            syn: { phase: 'armed', goAt, round, inverted, hostResolvedTimeouts: false }
-          })
-        });
-        if (inverted) this._fireTwist('polarity');
-      };
+        Kairos.resetGame = async function () {
+          if (S.role !== 'host' || !S.room || !S.roomCode) return;
+          if (!confirm('Reset game và đưa tất cả người chơi về sảnh chờ?')) return;
 
-      Kairos._tick = function () {
-        if (!S.room || S.room.screen !== 'synapse') return;
-        const syn = S.room.state.syn || {};
-        if (syn.phase !== 'armed' || !syn.goAt) return;
+          try {
+            KairosAudio.stopShepard();
+            S._synGoFired = false;
+            S._moleRedirectAmount = null;
+            if (S._paraTimer) { clearTimeout(S._paraTimer); S._paraTimer = null; }
 
-        if (Date.now() >= syn.goAt && !S._synGoFired) {
-          S._synGoFired = true;
-          KairosAudio.goSignal();
-          if (S.role === 'host') KairosAudio.stopShepard();
-          else if (navigator.vibrate) navigator.vibrate(40);
-          this.render();
-          return;
-        }
+            const patch = resetPlayerPatch();
+            S.players.forEach(p => Object.assign(p, patch));
+            await Promise.allSettled(S.players.map(p => KairosDB.updatePlayer(p.id, resetPlayerPatch())));
 
-        const windowMs = 5000;
-        const round = syn.round || 0;
-
-        if (S.role === 'host' && S._synGoFired && !syn.hostResolvedTimeouts && Date.now() >= syn.goAt + windowMs) {
-          const updates = S.players.filter(p => p.last_round !== round).map(p => {
-            p.last_reaction_ms = -2;
-            p.last_round = round;
-            p.penalty_count = Number(p.penalty_count || 0) + 1;
-            p.sips = Number(p.sips || 0) + SYN_SLOWEST_PENALTY;
-            return KairosDB.updatePlayer(p.id, {
-              last_reaction_ms: -2,
-              last_round: round,
-              penalty_count: p.penalty_count,
-              sips: p.sips
+            await this._patchRoom({
+              screen: 'lounge',
+              state: {},
+              round: 0,
+              flash: false
             });
+
+            this.toast('↺ Game đã được reset');
+            this.render();
+          } catch (e) {
+            console.error('resetGame failed:', e);
+            this.toast('⚠️ Không reset được game, thử lại.');
+          }
+        };
+
+        const originalTopbarRoom = Kairos._topbarRoom;
+        Kairos._topbarRoom = function () {
+          const html = originalTopbarRoom.call(this);
+          if (S.role !== 'host') return html;
+          const resetBtn = '<div class="icon-btn" onclick="Kairos.resetGame()">↺ Reset</div>';
+          if (html.includes('Kairos.resetGame')) return html;
+          const leaveBtn = '<div class="icon-btn" onclick="Kairos.leaveRoom()">⏏</div>';
+          if (html.includes(leaveBtn)) return html.replace(leaveBtn, resetBtn + leaveBtn);
+          return html + resetBtn;
+        };
+      }
+
+      if (!Kairos.__synapseFixApplied) {
+        Kairos.__synapseFixApplied = true;
+
+        Kairos.synArm = function () {
+          const syn = S.room.state.syn || { round: 0 };
+          const round = (syn.round || 0) + 1;
+          const goAt = Date.now() + 100 + Math.random() * 1400;
+          const inverted = !!syn.nextInverted;
+          S._synGoFired = false;
+          KairosAudio.startShepard();
+          this._patchRoom({
+            state: Object.assign({}, S.room.state, {
+              syn: { phase: 'armed', goAt, round, inverted, hostResolvedTimeouts: false }
+            })
           });
-          Promise.allSettled(updates).finally(() => {
-            this._patchRoom({
-              state: Object.assign({}, S.room.state, {
-                syn: Object.assign({}, syn, { hostResolvedTimeouts: true })
-              })
+          if (inverted) this._fireTwist('polarity');
+        };
+
+        Kairos._tick = function () {
+          if (!S.room || S.room.screen !== 'synapse') return;
+          const syn = S.room.state.syn || {};
+          if (syn.phase !== 'armed' || !syn.goAt) return;
+
+          if (Date.now() >= syn.goAt && !S._synGoFired) {
+            S._synGoFired = true;
+            KairosAudio.goSignal();
+            if (S.role === 'host') KairosAudio.stopShepard();
+            else if (navigator.vibrate) navigator.vibrate(40);
+            this.render();
+            return;
+          }
+
+          const windowMs = 5000;
+          const round = syn.round || 0;
+
+          if (S.role === 'host' && S._synGoFired && !syn.hostResolvedTimeouts && Date.now() >= syn.goAt + windowMs) {
+            const updates = S.players.filter(p => p.last_round !== round).map(p => {
+              p.last_reaction_ms = -2;
+              p.last_round = round;
+              p.penalty_count = Number(p.penalty_count || 0) + 1;
+              p.sips = Number(p.sips || 0) + SYN_SLOWEST_PENALTY;
+              return KairosDB.updatePlayer(p.id, {
+                last_reaction_ms: -2,
+                last_round: round,
+                penalty_count: p.penalty_count,
+                sips: p.sips
+              });
             });
-          });
-          this.render();
-          return;
-        }
+            Promise.allSettled(updates).finally(() => {
+              this._patchRoom({
+                state: Object.assign({}, S.room.state, {
+                  syn: Object.assign({}, syn, { hostResolvedTimeouts: true })
+                })
+              });
+            });
+            this.render();
+            return;
+          }
 
-        if (S.role === 'player' && S.me && S.me.last_round !== round && Date.now() >= syn.goAt + windowMs) {
-          this._synTimeout(round);
-          return;
-        }
+          if (S.role === 'player' && S.me && S.me.last_round !== round && Date.now() >= syn.goAt + windowMs) {
+            this._synTimeout(round);
+            return;
+          }
 
-        if (S._synGoFired) this.render();
-      };
+          if (S._synGoFired) this.render();
+        };
+      }
 
       return true;
     } catch (e) {
-      console.error('Synapse fix failed:', e);
+      console.error('Live fix failed:', e);
       return true;
     }
   }
