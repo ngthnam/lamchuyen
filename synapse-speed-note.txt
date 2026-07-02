@@ -1,2 +1,0 @@
-SYN_ARM_MAX_MS should be 1500.
-SYN_TAP_WINDOW_MS should be 5000.
