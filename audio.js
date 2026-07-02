@@ -1,17 +1,70 @@
 'use strict';
 
+(function installBootGuard() {
+  function memoryStorage() {
+    var store = {};
+    return {
+      getItem: function (key) { key = String(key); return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null; },
+      setItem: function (key, value) { store[String(key)] = String(value); },
+      removeItem: function (key) { delete store[String(key)]; },
+      clear: function () { store = {}; },
+      key: function (index) { return Object.keys(store)[index] || null; },
+      get length() { return Object.keys(store).length; }
+    };
+  }
+
+  function showBootError(err) {
+    console.error('Kairos boot failed:', err);
+    var stage = document.getElementById('stage');
+    if (!stage) return;
+    stage.innerHTML = '<div class="landing-card"><div class="landing-logo">KAIROS</div><div class="scene-title">Không tải được game</div><div class="scene-sub">Hãy bấm tải lại. Nếu vẫn lỗi, hãy mở tab ẩn danh để xoá session cũ.</div><button class="btn btn-primary btn-block" onclick="location.reload()">Tải lại</button></div>';
+  }
+
+  try {
+    var k = '__kairos_storage_test__';
+    window.localStorage.setItem(k, '1');
+    window.localStorage.removeItem(k);
+    try { JSON.parse(window.localStorage.getItem('kairos_session') || 'null'); }
+    catch (sessionErr) { window.localStorage.removeItem('kairos_session'); }
+  } catch (storageErr) {
+    try { Object.defineProperty(window, 'localStorage', { value: memoryStorage(), configurable: true }); }
+    catch (defineErr) { console.warn('Could not install storage fallback:', defineErr); }
+  }
+
+  var originalAddEventListener = document.addEventListener.bind(document);
+  document.addEventListener = function (type, listener, options) {
+    if (type === 'DOMContentLoaded' && typeof listener === 'function') {
+      return originalAddEventListener(type, function (event) {
+        try {
+          var result = listener.call(this, event);
+          if (result && typeof result.catch === 'function') result.catch(showBootError);
+          return result;
+        } catch (err) {
+          showBootError(err);
+        }
+      }, options);
+    }
+    return originalAddEventListener(type, listener, options);
+  };
+})();
+
 const KairosAudio = {
   ctx: null,
   _shepard: null,
 
   ensure() {
-    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    if (this.ctx.state === 'suspended') this.ctx.resume();
-    return this.ctx;
+    try {
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      return this.ctx;
+    } catch (e) {
+      return null;
+    }
   },
 
   startShepard() {
     const ctx = this.ensure();
+    if (!ctx) return;
     this.stopShepard();
     const master = ctx.createGain();
     master.gain.value = 0.05;
@@ -25,7 +78,7 @@ const KairosAudio = {
   },
 
   stopShepard() {
-    if (!this._shepard) return;
+    if (!this._shepard || !this.ctx) return;
     const ctx = this.ctx;
     const { master, osc } = this._shepard;
     try {
@@ -37,6 +90,7 @@ const KairosAudio = {
 
   _tone(freq, dur, type) {
     const ctx = this.ensure();
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = type || 'sine';
@@ -101,13 +155,7 @@ const KairosAudio = {
             S.players.forEach(p => Object.assign(p, patch));
             await Promise.allSettled(S.players.map(p => KairosDB.updatePlayer(p.id, resetPlayerPatch())));
 
-            await this._patchRoom({
-              screen: 'lounge',
-              state: {},
-              round: 0,
-              flash: false
-            });
-
+            await this._patchRoom({ screen: 'lounge', state: {}, round: 0, flash: false });
             this.toast('↺ Game đã được reset');
             this.render();
           } catch (e) {
@@ -138,11 +186,7 @@ const KairosAudio = {
           const inverted = !!syn.nextInverted;
           S._synGoFired = false;
           KairosAudio.startShepard();
-          this._patchRoom({
-            state: Object.assign({}, S.room.state, {
-              syn: { phase: 'armed', goAt, round, inverted, hostResolvedTimeouts: false }
-            })
-          });
+          this._patchRoom({ state: Object.assign({}, S.room.state, { syn: { phase: 'armed', goAt, round, inverted, hostResolvedTimeouts: false } }) });
           if (inverted) this._fireTwist('polarity');
         };
 
@@ -169,19 +213,10 @@ const KairosAudio = {
               p.last_round = round;
               p.penalty_count = Number(p.penalty_count || 0) + 1;
               p.sips = Number(p.sips || 0) + SYN_SLOWEST_PENALTY;
-              return KairosDB.updatePlayer(p.id, {
-                last_reaction_ms: -2,
-                last_round: round,
-                penalty_count: p.penalty_count,
-                sips: p.sips
-              });
+              return KairosDB.updatePlayer(p.id, { last_reaction_ms: -2, last_round: round, penalty_count: p.penalty_count, sips: p.sips });
             });
             Promise.allSettled(updates).finally(() => {
-              this._patchRoom({
-                state: Object.assign({}, S.room.state, {
-                  syn: Object.assign({}, syn, { hostResolvedTimeouts: true })
-                })
-              });
+              this._patchRoom({ state: Object.assign({}, S.room.state, { syn: Object.assign({}, syn, { hostResolvedTimeouts: true }) }) });
             });
             this.render();
             return;
